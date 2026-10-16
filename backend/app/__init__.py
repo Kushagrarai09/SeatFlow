@@ -1,0 +1,1 @@
+"""SeatFlow backend application package."""
