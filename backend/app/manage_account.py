@@ -8,6 +8,10 @@ Use only with trusted database access; never expose this operation as a public A
 import argparse
 import sys
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from sqlalchemy import select
 
 from app.database import SessionLocal
