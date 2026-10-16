@@ -1,5 +1,4 @@
 """Ticket category and inventory APIs."""
-
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -33,39 +32,28 @@ def _assert_event_owner(event: Event, user: User) -> None:
 def _to_read(category: TicketCategory) -> TicketCategoryRead:
     now = datetime.now(timezone.utc)
     remaining = max(0, category.total_quantity - category.sold_quantity - category.reserved_quantity)
-    starts = category.sales_start_at
-    ends = category.sales_end_at
-    # Normalize naive timestamps from SQLite into UTC for deterministic test behavior.
+    starts, ends = category.sales_start_at, category.sales_end_at
     if starts is not None and starts.tzinfo is None:
         starts = starts.replace(tzinfo=timezone.utc)
     if ends is not None and ends.tzinfo is None:
         ends = ends.replace(tzinfo=timezone.utc)
-    window_open = ((starts is None or starts <= now) and (ends is None or ends > now))
+    window_open = (starts is None or starts <= now) and (ends is None or ends > now)
     return TicketCategoryRead(
-        id=category.id,
-        event_id=category.event_id,
-        name=category.name,
-        description=category.description,
-        price=category.price,
-        total_quantity=category.total_quantity,
-        sold_quantity=category.sold_quantity,
-        reserved_quantity=category.reserved_quantity,
-        available_quantity=remaining,
-        min_per_order=category.min_per_order,
-        max_per_order=category.max_per_order,
-        sales_start_at=category.sales_start_at,
-        sales_end_at=category.sales_end_at,
+        id=category.id, event_id=category.event_id, name=category.name,
+        description=category.description, price=category.price,
+        total_quantity=category.total_quantity, sold_quantity=category.sold_quantity,
+        reserved_quantity=category.reserved_quantity, available_quantity=remaining,
+        min_per_order=category.min_per_order, max_per_order=category.max_per_order,
+        sales_start_at=category.sales_start_at, sales_end_at=category.sales_end_at,
         status=category.status,
         sales_open=category.status == "active" and remaining > 0 and window_open,
-        created_at=category.created_at,
-        updated_at=category.updated_at,
+        created_at=category.created_at, updated_at=category.updated_at,
     )
 
 
 def _get_category(db: Session, event_id: int, category_id: int) -> TicketCategory:
     category = db.scalar(select(TicketCategory).where(
-        TicketCategory.id == category_id,
-        TicketCategory.event_id == event_id,
+        TicketCategory.id == category_id, TicketCategory.event_id == event_id
     ))
     if category is None:
         raise HTTPException(status_code=404, detail="Ticket category not found")
@@ -74,16 +62,13 @@ def _get_category(db: Session, event_id: int, category_id: int) -> TicketCategor
 
 def _validate_inventory_change(category: TicketCategory, changes: dict) -> None:
     total = changes.get("total_quantity", category.total_quantity)
-    sold = category.sold_quantity
-    reserved = category.reserved_quantity
-    if total < sold + reserved:
+    if total < category.sold_quantity + category.reserved_quantity:
         raise HTTPException(status_code=409, detail="total_quantity cannot be less than sold plus reserved tickets")
     minimum = changes.get("min_per_order", category.min_per_order)
     maximum = changes.get("max_per_order", category.max_per_order)
     if maximum < minimum:
         raise HTTPException(status_code=422, detail="max_per_order must be greater than or equal to min_per_order")
-    starts = changes.get("sales_start_at", category.sales_start_at)
-    ends = changes.get("sales_end_at", category.sales_end_at)
+    starts, ends = changes.get("sales_start_at", category.sales_start_at), changes.get("sales_end_at", category.sales_end_at)
     if starts is not None and ends is not None:
         if starts.tzinfo is None:
             starts = starts.replace(tzinfo=timezone.utc)
@@ -93,17 +78,8 @@ def _validate_inventory_change(category: TicketCategory, changes: dict) -> None:
             raise HTTPException(status_code=422, detail="sales_end_at must be later than sales_start_at")
 
 
-@router.post(
-    "/events/{event_id}/ticket-categories",
-    response_model=TicketCategoryRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_ticket_category(
-    event_id: int,
-    payload: TicketCategoryCreate,
-    db: DbSession,
-    current_user: OrganizerOrAdmin,
-) -> TicketCategoryRead:
+@router.post("/events/{event_id}/ticket-categories", response_model=TicketCategoryRead, status_code=201)
+def create_ticket_category(event_id: int, payload: TicketCategoryCreate, db: DbSession, current_user: OrganizerOrAdmin):
     event = _get_event(db, event_id)
     _assert_event_owner(event, current_user)
     if event.status in ("cancelled", "completed"):
@@ -111,16 +87,10 @@ def create_ticket_category(
     if payload.total_quantity > event.capacity:
         raise HTTPException(status_code=422, detail="Ticket category quantity cannot exceed the event capacity")
     category = TicketCategory(
-        event_id=event.id,
-        name=payload.name,
-        description=payload.description,
-        price=payload.price,
-        total_quantity=payload.total_quantity,
-        min_per_order=payload.min_per_order,
-        max_per_order=payload.max_per_order,
-        sales_start_at=payload.sales_start_at,
-        sales_end_at=payload.sales_end_at,
-        status=payload.status,
+        event_id=event.id, name=payload.name, description=payload.description, price=payload.price,
+        total_quantity=payload.total_quantity, min_per_order=payload.min_per_order,
+        max_per_order=payload.max_per_order, sales_start_at=payload.sales_start_at,
+        sales_end_at=payload.sales_end_at, status=payload.status,
     )
     db.add(category)
     try:
@@ -134,16 +104,11 @@ def create_ticket_category(
 
 @router.get("/events/{event_id}/ticket-categories", response_model=list[TicketCategoryRead])
 def list_ticket_categories(
-    event_id: int,
-    db: DbSession,
-    include_inactive: bool = Query(default=False),
+    event_id: int, db: DbSession, include_inactive: bool = Query(default=False),
     current_user: User | None = Depends(get_current_user),
-) -> list[TicketCategoryRead]:
-    """Public users see active ticket types; owners/admins may request inactive ones."""
+):
     event = _get_event(db, event_id)
-    is_manager = current_user is not None and (
-        current_user.role == "admin" or event.organizer.user_id == current_user.id
-    )
+    is_manager = current_user is not None and (current_user.role == "admin" or event.organizer.user_id == current_user.id)
     if include_inactive and not is_manager:
         raise HTTPException(status_code=403, detail="Only the event organizer or an administrator can view inactive ticket categories")
     if event.status != "published" and not is_manager:
@@ -156,15 +121,11 @@ def list_ticket_categories(
 
 @router.get("/events/{event_id}/ticket-categories/{category_id}", response_model=TicketCategoryRead)
 def get_ticket_category(
-    event_id: int,
-    category_id: int,
-    db: DbSession,
+    event_id: int, category_id: int, db: DbSession,
     current_user: User | None = Depends(get_current_user),
-) -> TicketCategoryRead:
+):
     event = _get_event(db, event_id)
-    is_manager = current_user is not None and (
-        current_user.role == "admin" or event.organizer.user_id == current_user.id
-    )
+    is_manager = current_user is not None and (current_user.role == "admin" or event.organizer.user_id == current_user.id)
     if event.status != "published" and not is_manager:
         raise HTTPException(status_code=404, detail="Event not found")
     category = _get_category(db, event_id, category_id)
@@ -175,12 +136,9 @@ def get_ticket_category(
 
 @router.patch("/events/{event_id}/ticket-categories/{category_id}", response_model=TicketCategoryRead)
 def update_ticket_category(
-    event_id: int,
-    category_id: int,
-    payload: TicketCategoryUpdate,
-    db: DbSession,
+    event_id: int, category_id: int, payload: TicketCategoryUpdate, db: DbSession,
     current_user: OrganizerOrAdmin,
-) -> TicketCategoryRead:
+):
     event = _get_event(db, event_id)
     _assert_event_owner(event, current_user)
     category = _get_category(db, event_id, category_id)
@@ -202,16 +160,8 @@ def update_ticket_category(
     return _to_read(category)
 
 
-@router.delete(
-    "/events/{event_id}/ticket-categories/{category_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-def delete_ticket_category(
-    event_id: int,
-    category_id: int,
-    db: DbSession,
-    current_user: OrganizerOrAdmin,
-) -> None:
+@router.delete("/events/{event_id}/ticket-categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_ticket_category(event_id: int, category_id: int, db: DbSession, current_user: OrganizerOrAdmin) -> None:
     event = _get_event(db, event_id)
     _assert_event_owner(event, current_user)
     category = _get_category(db, event_id, category_id)
@@ -223,12 +173,10 @@ def delete_ticket_category(
 
 @router.post("/ticket-categories/{category_id}/inventory/adjust", response_model=TicketCategoryRead)
 def adjust_inventory(
-    category_id: int,
-    quantity_delta: Annotated[int, Query(ne=0, ge=-1_000_000, le=1_000_000)],
-    db: DbSession,
-    current_user: OrganizerOrAdmin,
-) -> TicketCategoryRead:
-    """Apply atomic stock adjustment without going below sold/reserved units."""
+    category_id: int, quantity_delta: Annotated[int, Query(ne=0, ge=-1_000_000, le=1_000_000)],
+    db: DbSession, current_user: OrganizerOrAdmin,
+):
+    """Atomic conditional update that maintains event and ticket inventory bounds."""
     category = db.get(TicketCategory, category_id)
     if category is None:
         raise HTTPException(status_code=404, detail="Ticket category not found")
@@ -236,20 +184,22 @@ def adjust_inventory(
     _assert_event_owner(event, current_user)
     if event.status in ("cancelled", "completed"):
         raise HTTPException(status_code=409, detail="Cannot adjust inventory for a cancelled or completed event")
-    statement = (
-        update(TicketCategory)
-        .where(
+    other_total = db.scalar(select(TicketCategory.total_quantity).where(
+        TicketCategory.event_id == event.id, TicketCategory.id != category_id
+    ))
+    other_total = other_total or 0
+    proposed = TicketCategory.total_quantity + quantity_delta
+    result = db.execute(
+        update(TicketCategory).where(
             TicketCategory.id == category_id,
-            TicketCategory.total_quantity + quantity_delta >= TicketCategory.sold_quantity + TicketCategory.reserved_quantity,
-            TicketCategory.total_quantity + quantity_delta > 0,
-            TicketCategory.total_quantity + quantity_delta <= event.capacity,
-        )
-        .values(total_quantity=TicketCategory.total_quantity + quantity_delta)
+            proposed >= TicketCategory.sold_quantity + TicketCategory.reserved_quantity,
+            proposed > 0,
+            other_total + proposed <= event.capacity,
+        ).values(total_quantity=proposed)
     )
-    result = db.execute(statement)
     if result.rowcount != 1:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Inventory adjustment would make capacity invalid or lower than sold/reserved quantity")
+        raise HTTPException(status_code=409, detail="Inventory adjustment would violate available, sold/reserved, or event-capacity bounds")
     db.commit()
     db.refresh(category)
     return _to_read(category)
