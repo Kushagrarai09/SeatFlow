@@ -4,15 +4,18 @@
 
 SeatFlow is a full-stack platform for discovering events, managing venues, and building reliable seat-booking workflows.
 
-## Phase 1 — Foundation
+## Current progress
 
-This phase establishes the project structure, configuration examples, a health-check API, and a branded frontend landing page. Booking, authentication, seat holds, payments, and organizer dashboards are planned for later phases and are not implemented yet.
+- **Phase 1 — Foundation:** starter UI, FastAPI service, environment examples, and health checks.
+- **Phase 2 — Database foundation (in progress):** SQLAlchemy configuration, MySQL driver, Alembic migration, and initial Venue, Organizer, and Event models. Review the Phase 2 guide before applying the migration.
+
+Authentication, public event CRUD, seat holds, booking, and payments are not implemented yet.
 
 ## Technology stack
 
 - **Frontend:** Next.js, React, TypeScript
 - **Backend:** FastAPI, Python
-- **Database:** MySQL (introduced with the persistence phase)
+- **Database:** MySQL with SQLAlchemy ORM and Alembic migrations
 - **Local development:** Docker Compose (container setup will be added in a later foundation task)
 
 ## Repository layout
@@ -32,7 +35,7 @@ SeatFlow/
 - Python 3.11 or newer
 - Git
 
-MySQL is not required to run the Phase 1 health-check endpoint or frontend landing page.
+MySQL is not required for the basic `/health` endpoint or frontend landing page. The `/health/database` endpoint and database migrations require a configured, running MySQL database.
 
 ## Run the backend
 
@@ -76,7 +79,7 @@ Open http://localhost:3000.
 
 ## Environment variables
 
-The frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://127.0.0.1:8000`). The backend reads `FRONTEND_URL` for CORS origins. Keep real secrets out of Git; commit only example configuration files.
+The frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://127.0.0.1:8000`). The backend reads `FRONTEND_URL` for CORS origins and `DATABASE_URL` for SQLAlchemy. Copy `backend/.env.example` to `backend/.env` and set your local database credentials; do not commit `.env` files. See [docs/PHASE_2.md](docs/PHASE_2.md) for setup and migration commands.
 
 ## Project principles
 
@@ -88,11 +91,11 @@ The frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://127.0.0.1:8000`). T
 ## Roadmap
 
 - **Phase 1:** project foundation, starter UI, API health check, setup documentation
-- **Phase 2:** database integration and initial domain models
+- **Phase 2:** database integration and initial domain models (implementation on `feat/phase-2-database`)
 - **Phase 3:** accounts, authentication, and roles
 - **Phase 4:** event discovery and organizer event management
 - **Phase 5:** seat maps, temporary seat holds, and concurrency-safe booking
 - **Phase 6:** checkout/payment test mode and booking confirmations
 - **Phase 7:** testing, observability, deployment, and production hardening
 
-See [docs/PHASE_1.md](docs/PHASE_1.md) for the acceptance checklist.
+See [docs/PHASE_1.md](docs/PHASE_1.md) and [docs/PHASE_2.md](docs/PHASE_2.md) for setup and acceptance checklists.
