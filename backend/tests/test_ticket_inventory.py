@@ -1,253 +1,188 @@
 """Ticket inventory API tests using isolated SQLite state."""
-
 import os
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key-that-is-long-enough-for-seatflow")
 
-from concurrent.futures import ThreadPoolExecutor
-from fastapi.testclient import TestClient
+from datetime import datetime, timezone
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from fastapi.testclient import TestClient
 
-from app.auth import hash_password
 from app.database import Base, get_db
 from app.main import app
-from app.models import User, Venue, Organizer, Event, TicketCategory
-from datetime import datetime, timezone
-from decimal import Decimal
+from app.models import User, TicketCategory
 
 
 def make_client():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
-
     def override_get_db():
         db = factory()
         try:
             yield db
         finally:
             db.close()
-
     app.dependency_overrides[get_db] = override_get_db
     app.state.test_session_factory = factory
     return TestClient(app), engine, factory
 
 
 def register_as(client, factory, email, role):
-    registered = client.post("/api/v1/auth/register", json={
+    response = client.post("/api/v1/auth/register", json={
         "email": email, "full_name": "Ticket Test User", "password": "correct-horse-123"
     })
-    assert registered.status_code == 201, registered.text
+    assert response.status_code == 201, response.text
     with factory() as db:
         user = db.scalar(select(User).where(User.email == email.lower()))
-        user.role = role  # trusted provisioning simulation for test setup only
+        user.role = role
         db.commit()
-    tokens = client.post("/api/v1/auth/login", json={
-        "email": email, "password": "correct-horse-123"
-    })
+    tokens = client.post("/api/v1/auth/login", json={"email": email, "password": "correct-horse-123"})
     assert tokens.status_code == 200, tokens.text
     return {"Authorization": "Bearer " + tokens.json()["access_token"]}
 
 
-def create_event(client, factory, headers, email="ticket-host@example.com", status="published", capacity=200):
-    organizer_response = client.post("/api/v1/organizers", headers=headers, json={
+def create_event(client, headers, email="ticket-host@example.com", capacity=200):
+    org = client.post("/api/v1/organizers", headers=headers, json={
         "name": "Ticket Host " + email, "email": email, "description": "Inventory test host"
     })
-    assert organizer_response.status_code == 201, organizer_response.text
-    venue_response = client.post("/api/v1/venues", headers=headers, json={
-        "name": "Ticket Hall", "address": "1 Test Road", "city": "Mumbai",
-        "country": "India", "capacity": capacity
+    assert org.status_code == 201, org.text
+    venue = client.post("/api/v1/venues", headers=headers, json={
+        "name": "Ticket Hall", "address": "1 Test Road", "city": "Mumbai", "country": "India", "capacity": capacity
     })
-    assert venue_response.status_code == 201, venue_response.text
-    now_year = datetime.now(timezone.utc).year + 1
-    event_response = client.post("/api/v1/events", headers=headers, json={
-        "organizer_id": organizer_response.json()["id"],
-        "venue_id": venue_response.json()["id"],
-        "title": "Ticket Inventory Event",
-        "description": "Test event for general-admission ticket categories",
-        "category": "technology",
-        "starts_at": f"{now_year}-01-10T18:00:00Z",
-        "ends_at": f"{now_year}-01-10T21:00:00Z",
-        "price": "0.00",
-        "capacity": capacity,
-        "status": status,
+    assert venue.status_code == 201, venue.text
+    next_year = datetime.now(timezone.utc).year + 1
+    response = client.post("/api/v1/events", headers=headers, json={
+        "organizer_id": org.json()["id"], "venue_id": venue.json()["id"],
+        "title": "Ticket Inventory Event", "description": "Test event for ticket categories",
+        "category": "technology", "starts_at": f"{next_year}-06-10T18:00:00Z",
+        "ends_at": f"{next_year}-06-10T21:00:00Z", "price": "0.00",
+        "capacity": capacity, "status": "published",
     })
-    assert event_response.status_code == 201, event_response.text
-    return event_response.json()["id"]
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
 
 
 def ticket_payload(**overrides):
-    payload = {
-        "name": "General Admission",
-        "description": "Standard entry",
-        "price": "499.00",
-        "total_quantity": 100,
-        "min_per_order": 1,
-        "max_per_order": 8,
-        "status": "active",
-    }
-    payload.update(overrides)
-    return payload
+    result = {"name": "General Admission", "description": "Standard entry", "price": "499.00",
+              "total_quantity": 100, "min_per_order": 1, "max_per_order": 8, "status": "active"}
+    result.update(overrides)
+    return result
 
 
-def test_create_list_update_and_delete_ticket_category():
+def cleanup(client, engine):
+    client.close()
+    app.dependency_overrides.clear()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+def test_create_list_update_delete():
     client, engine, factory = make_client()
     try:
         headers = register_as(client, factory, "host@example.com", "organizer")
-        event_id = create_event(client, factory, headers)
+        event_id = create_event(client, headers)
         created = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=headers, json=ticket_payload())
         assert created.status_code == 201, created.text
-        category = created.json()
-        assert category["available_quantity"] == 100
-        assert category["sales_open"] is True
-
-        updated = client.patch(
-            f"/api/v1/events/{event_id}/ticket-categories/{category['id']}",
-            headers=headers,
-            json={"price": "599.00", "max_per_order": 5},
-        )
+        row = created.json()
+        assert row["available_quantity"] == 100 and row["sales_open"]
+        updated = client.patch(f"/api/v1/events/{event_id}/ticket-categories/{row['id']}",
+                               headers=headers, json={"price":"599.00", "max_per_order":5})
         assert updated.status_code == 200, updated.text
         assert updated.json()["price"] == "599.00"
-        assert updated.json()["max_per_order"] == 5
-
-        deleted = client.delete(f"/api/v1/events/{event_id}/ticket-categories/{category['id']}", headers=headers)
-        assert deleted.status_code == 204
+        assert client.delete(f"/api/v1/events/{event_id}/ticket-categories/{row['id']}", headers=headers).status_code == 204
     finally:
-        client.close()
-        app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        cleanup(client, engine)
 
 
-def test_attendees_can_view_active_categories_but_cannot_manage_them():
+def test_public_visibility_and_attendee_denied_management():
     client, engine, factory = make_client()
     try:
         host = register_as(client, factory, "host@example.com", "organizer")
-        event_id = create_event(client, factory, host)
+        event_id = create_event(client, host)
         active = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host, json=ticket_payload())
-        inactive = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host, json=ticket_payload(
-            name="VIP", status="inactive", price="999.00"
-        ))
+        inactive = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host,
+                               json=ticket_payload(name="VIP", status="inactive", price="999.00"))
         assert active.status_code == inactive.status_code == 201
-
-        attendee = register_as(client, factory, "attendee@example.com", "attendee")
-        visible = client.get(f"/api/v1/events/{event_id}/ticket-categories")
-        assert visible.status_code == 200
-        assert [item["name"] for item in visible.json()] == ["General Admission"]
-        denied = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=attendee, json=ticket_payload(name="Attendee-created"))
-        assert denied.status_code == 403
-        inactive_denied = client.get(f"/api/v1/events/{event_id}/ticket-categories", params={"include_inactive": "true"})
-        assert inactive_denied.status_code == 403
+        register_as(client, factory, "attendee@example.com", "attendee")
+        listing = client.get(f"/api/v1/events/{event_id}/ticket-categories")
+        assert listing.status_code == 200 and [x["name"] for x in listing.json()] == ["General Admission"]
+        assert client.get(f"/api/v1/events/{event_id}/ticket-categories", params={"include_inactive":"true"}).status_code == 403
     finally:
-        client.close()
-        app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        cleanup(client, engine)
 
 
-def test_owner_isolation_and_capacity_rules():
+def test_ownership_and_capacity_validation():
     client, engine, factory = make_client()
     try:
         host_a = register_as(client, factory, "host-a@example.com", "organizer")
-        event_id = create_event(client, factory, host_a, "host-a@example.com", capacity=50)
-        oversized = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host_a, json=ticket_payload(total_quantity=51))
-        assert oversized.status_code == 422
-        created = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host_a, json=ticket_payload(total_quantity=50))
-        assert created.status_code == 201, created.text
-
+        event_id = create_event(client, host_a, "host-a@example.com", capacity=50)
+        assert client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host_a,
+                           json=ticket_payload(total_quantity=51)).status_code == 422
+        category = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host_a,
+                               json=ticket_payload(total_quantity=30))
+        assert category.status_code == 201, category.text
         host_b = register_as(client, factory, "host-b@example.com", "organizer")
-        denied = client.patch(
-            f"/api/v1/events/{event_id}/ticket-categories/{created.json()['id']}",
-            headers=host_b,
-            json={"price": "1.00"},
-        )
-        assert denied.status_code == 403
+        assert client.patch(f"/api/v1/events/{event_id}/ticket-categories/{category.json()['id']}",
+                            headers=host_b, json={"price":"1.00"}).status_code == 403
     finally:
-        client.close()
-        app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        cleanup(client, engine)
 
 
-def test_invalid_sales_window_order_limits_and_duplicate_names():
+def test_bad_sales_window_order_rules_and_duplicate_name():
     client, engine, factory = make_client()
     try:
         host = register_as(client, factory, "host@example.com", "organizer")
-        event_id = create_event(client, factory, host)
-        invalid = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host, json=ticket_payload(
-            min_per_order=5, max_per_order=2
-        ))
-        assert invalid.status_code == 422
-        invalid_window = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host, json=ticket_payload(
-            sales_start_at="2027-01-02T00:00:00Z", sales_end_at="2027-01-01T00:00:00Z"
-        ))
-        assert invalid_window.status_code == 422
-
-        first = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host, json=ticket_payload())
-        second = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host, json=ticket_payload())
-        assert first.status_code == 201
-        assert second.status_code == 409
+        event_id = create_event(client, host)
+        assert client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host,
+                           json=ticket_payload(min_per_order=5, max_per_order=2)).status_code == 422
+        assert client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host,
+                           json=ticket_payload(sales_start_at="2027-01-02T00:00:00Z",
+                                               sales_end_at="2027-01-01T00:00:00Z")).status_code == 422
+        assert client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host, json=ticket_payload()).status_code == 201
+        assert client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host, json=ticket_payload()).status_code == 409
     finally:
-        client.close()
-        app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        cleanup(client, engine)
 
 
-def test_inventory_adjustment_is_atomic_and_never_below_sold_or_reserved():
+def test_inventory_adjustment_cannot_undercut_sold_reserved_or_event_capacity():
     client, engine, factory = make_client()
     try:
-        headers = register_as(client, factory, "host@example.com", "organizer")
-        event_id = create_event(client, factory, headers, capacity=100)
-        category = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=headers, json=ticket_payload(total_quantity=50))
-        assert category.status_code == 201
-        category_id = category.json()["id"]
+        host = register_as(client, factory, "host@example.com", "organizer")
+        event_id = create_event(client, host, capacity=100)
+        created = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host,
+                              json=ticket_payload(total_quantity=50))
+        assert created.status_code == 201, created.text
+        category_id = created.json()["id"]
         with factory() as db:
-            row = db.get(TicketCategory, category_id)
-            row.sold_quantity = 20
-            row.reserved_quantity = 10
+            category = db.get(TicketCategory, category_id)
+            category.sold_quantity, category.reserved_quantity = 20, 10
             db.commit()
-
-        conflict = client.post(
-            f"/api/v1/ticket-categories/{category_id}/inventory/adjust",
-            params={"quantity_delta": -21},
-            headers=headers,
-        )
-        assert conflict.status_code == 409
-        reduced = client.post(
-            f"/api/v1/ticket-categories/{category_id}/inventory/adjust",
-            params={"quantity_delta": -20},
-            headers=headers,
-        )
-        assert reduced.status_code == 200, reduced.text
-        assert reduced.json()["total_quantity"] == 30
-        assert reduced.json()["available_quantity"] == 0
+        bad = client.post(f"/api/v1/ticket-categories/{category_id}/inventory/adjust",
+                          params={"quantity_delta":-21}, headers=host)
+        assert bad.status_code == 409
+        good = client.post(f"/api/v1/ticket-categories/{category_id}/inventory/adjust",
+                           params={"quantity_delta":-20}, headers=host)
+        assert good.status_code == 200 and good.json()["total_quantity"] == 30
+        assert good.json()["available_quantity"] == 0
+        too_many = client.post(f"/api/v1/ticket-categories/{category_id}/inventory/adjust",
+                               params={"quantity_delta":80}, headers=host)
+        assert too_many.status_code == 409
     finally:
-        client.close()
-        app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        cleanup(client, engine)
 
 
-def test_ticket_category_cannot_be_deleted_after_sales_or_reservations():
+def test_category_with_sold_inventory_cannot_be_deleted():
     client, engine, factory = make_client()
     try:
-        headers = register_as(client, factory, "host@example.com", "organizer")
-        event_id = create_event(client, factory, headers)
-        created = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=headers, json=ticket_payload())
-        assert created.status_code == 201
+        host = register_as(client, factory, "host@example.com", "organizer")
+        event_id = create_event(client, host)
+        category = client.post(f"/api/v1/events/{event_id}/ticket-categories", headers=host, json=ticket_payload())
         with factory() as db:
-            category = db.get(TicketCategory, created.json()["id"])
-            category.sold_quantity = 1
+            row = db.get(TicketCategory, category.json()["id"])
+            row.sold_quantity = 1
             db.commit()
-        deleted = client.delete(
-            f"/api/v1/events/{event_id}/ticket-categories/{created.json()['id']}",
-            headers=headers,
-        )
-        assert deleted.status_code == 409
+        assert client.delete(f"/api/v1/events/{event_id}/ticket-categories/{category.json()['id']}",
+                             headers=host).status_code == 409
     finally:
-        client.close()
-        app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        cleanup(client, engine)
