@@ -8,6 +8,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.database import Base
 from app import models  # noqa: F401 — registers model metadata
+from app import auth_models  # noqa: F401 — registers authentication metadata
 
 config = context.config
 if config.config_file_name is not None:
