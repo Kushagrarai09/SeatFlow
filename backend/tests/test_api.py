@@ -1,8 +1,5 @@
 """API tests using an isolated SQLite database; no MySQL server is needed."""
 
-from datetime import datetime, timezone
-from decimal import Decimal
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -143,6 +140,6 @@ def test_patch_event_updates_only_supplied_fields_and_rejects_invalid_dates(clie
 
     invalid_response = client.patch(
         f"/api/v1/events/{event_id}",
-        json={"ends_at": "2027-01-10T17:00:00Z"},
+        json={"ends_at": "2027-01-10T17:00:00"},
     )
     assert invalid_response.status_code == 422
