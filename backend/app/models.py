@@ -22,9 +22,11 @@ class Venue(Base):
     city: Mapped[str] = mapped_column(String(100), nullable=False)
     country: Mapped[str] = mapped_column(String(100), nullable=False, default="India")
     capacity: Mapped[int] = mapped_column(nullable=False)
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     events: Mapped[list["Event"]] = relationship(back_populates="venue")
+    owner: Mapped["User | None"] = relationship(back_populates="venues")
 
 
 class Organizer(Base):
@@ -32,15 +34,18 @@ class Organizer(Base):
     __tablename__ = "organizers"
     __table_args__ = (
         UniqueConstraint("email", name="uq_organizers_email"),
+        UniqueConstraint("user_id", name="uq_organizers_user_id"),
         Index("ix_organizers_name", "name"),
     )
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     email: Mapped[str] = mapped_column(String(254), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     events: Mapped[list["Event"]] = relationship(back_populates="organizer")
+    user: Mapped["User | None"] = relationship(back_populates="organizer_profile")
 
 
 class Event(Base):
@@ -88,6 +93,8 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    venues: Mapped[list["Venue"]] = relationship(back_populates="owner")
+    organizer_profile: Mapped["Organizer | None"] = relationship(back_populates="user", uselist=False)
 
 
 class RefreshToken(Base):
