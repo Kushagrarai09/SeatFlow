@@ -69,3 +69,85 @@ class EventRead(EventCreate, ORMReadModel):
     id: int
     created_at: datetime
     updated_at: datetime
+
+
+
+class TicketCategoryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=2000)
+    price: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    total_quantity: int = Field(gt=0, le=1_000_000)
+    min_per_order: int = Field(default=1, ge=1, le=100)
+    max_per_order: int = Field(default=10, ge=1, le=100)
+    sales_start_at: datetime | None = None
+    sales_end_at: datetime | None = None
+    status: str = Field(default="active", pattern="^(active|inactive)$")
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Ticket category name cannot be blank")
+        return value
+
+    @field_validator("sales_end_at")
+    @classmethod
+    def end_after_start(cls, value: datetime | None, info) -> datetime | None:
+        start = info.data.get("sales_start_at")
+        if value is not None and start is not None and value <= start:
+            raise ValueError("sales_end_at must be later than sales_start_at")
+        return value
+
+    @field_validator("max_per_order")
+    @classmethod
+    def max_not_below_min(cls, value: int, info) -> int:
+        minimum = info.data.get("min_per_order", 1)
+        if value < minimum:
+            raise ValueError("max_per_order must be greater than or equal to min_per_order")
+        return value
+
+
+class TicketCategoryUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=2000)
+    price: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    total_quantity: int | None = Field(default=None, gt=0, le=1_000_000)
+    min_per_order: int | None = Field(default=None, ge=1, le=100)
+    max_per_order: int | None = Field(default=None, ge=1, le=100)
+    sales_start_at: datetime | None = None
+    sales_end_at: datetime | None = None
+    status: str | None = Field(default=None, pattern="^(active|inactive)$")
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            raise ValueError("Ticket category name cannot be blank")
+        return value
+
+
+class TicketCategoryRead(ORMReadModel):
+    id: int
+    event_id: int
+    name: str
+    description: str | None
+    price: Decimal
+    total_quantity: int
+    sold_quantity: int
+    reserved_quantity: int
+    available_quantity: int
+    min_per_order: int
+    max_per_order: int
+    sales_start_at: datetime | None
+    sales_end_at: datetime | None
+    status: str
+    sales_open: bool
+    created_at: datetime
+    updated_at: datetime
+
