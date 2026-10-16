@@ -41,34 +41,34 @@ def test_register_login_profile_refresh_and_logout():
     client, engine = make_client()
     try:
         registered = client.post("/api/v1/auth/register", json={
-            "email": "attendee@example.test", "full_name": "Test Attendee", "password": "correct-horse-123"
+            "email": "attendee@example.com", "full_name": "Test Attendee", "password": "correct-horse-123"
         })
         assert registered.status_code == 201
         assert registered.json()["role"] == "attendee"
         assert "password_hash" not in registered.json()
 
         attempted_escalation = client.post("/api/v1/auth/register", json={
-            "email": "admin@example.test", "full_name": "Admin User", "password": "correct-horse-123", "role": "admin"
+            "email": "admin@example.com", "full_name": "Admin User", "password": "correct-horse-123", "role": "admin"
         })
         assert attempted_escalation.status_code == 422
         assert client.post("/api/v1/auth/register", json={
-            "email": "attendee@example.test", "full_name": "Test Attendee", "password": "correct-horse-123"
+            "email": "attendee@example.com", "full_name": "Test Attendee", "password": "correct-horse-123"
         }).status_code == 409
 
         bad_login = client.post("/api/v1/auth/login", json={
-            "email": "attendee@example.test", "password": "incorrect-password"
+            "email": "attendee@example.com", "password": "incorrect-password"
         })
         assert bad_login.status_code == 401
 
         response = client.post("/api/v1/auth/login", json={
-            "email": "ATTENDEE@example.test", "password": "correct-horse-123"
+            "email": "ATTENDEE@example.com", "password": "correct-horse-123"
         })
         assert response.status_code == 200
         tokens = response.json()
         headers = {"Authorization": "Bearer " + tokens["access_token"]}
         profile = client.get("/api/v1/auth/me", headers=headers)
         assert profile.status_code == 200
-        assert profile.json()["email"] == "attendee@example.test"
+        assert profile.json()["email"] == "attendee@example.com"
         updated_profile = client.patch("/api/v1/auth/me", json={"full_name": "Updated Attendee"}, headers=headers)
         assert updated_profile.status_code == 200
         assert updated_profile.json()["full_name"] == "Updated Attendee"
@@ -94,10 +94,10 @@ def test_admin_can_promote_organizer_but_attendee_cannot_assign_roles():
     testing_session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     try:
         admin_user = client.post("/api/v1/auth/register", json={
-            "email": "admin@example.test", "full_name": "Admin User", "password": "correct-horse-123"
+            "email": "admin@example.com", "full_name": "Admin User", "password": "correct-horse-123"
         })
         attendee = client.post("/api/v1/auth/register", json={
-            "email": "new-organizer@example.test", "full_name": "New Organizer", "password": "correct-horse-123"
+            "email": "new-organizer@example.com", "full_name": "New Organizer", "password": "correct-horse-123"
         })
         assert admin_user.status_code == attendee.status_code == 201
         with testing_session() as db:
@@ -107,10 +107,10 @@ def test_admin_can_promote_organizer_but_attendee_cannot_assign_roles():
             db.commit()
 
         admin_tokens = client.post("/api/v1/auth/login", json={
-            "email": "admin@example.test", "password": "correct-horse-123"
+            "email": "admin@example.com", "password": "correct-horse-123"
         }).json()
         attendee_tokens = client.post("/api/v1/auth/login", json={
-            "email": "new-organizer@example.test", "password": "correct-horse-123"
+            "email": "new-organizer@example.com", "password": "correct-horse-123"
         }).json()
         target_id = attendee.json()["id"]
 
