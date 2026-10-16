@@ -250,11 +250,15 @@ def cancel_reservation(reservation_id: int, db: DbSession, current_user: Current
         db.commit()
         raise HTTPException(status_code=404, detail="Reservation not found")
     if reservation.status == "cancelled":
+        db.commit()
         return _read(reservation)
     if reservation.status == "expired":
+        # Commit expiry releases performed by _expire_due before returning the conflict.
+        db.commit()
         raise HTTPException(status_code=409, detail="Expired reservation cannot be cancelled")
     if reservation.status == "confirmed":
         # Refunds/payment reversals are deliberately not implied by this MVP.
+        db.commit()
         raise HTTPException(status_code=409, detail="Confirmed bookings require a separate refund/cancellation workflow")
     released = db.execute(
         update(TicketCategory)
