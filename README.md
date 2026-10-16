@@ -9,9 +9,10 @@ SeatFlow is a full-stack platform for discovering events, managing venues, and b
 - **Phase 1 — Foundation:** starter UI, FastAPI service, environment examples, and health checks.
 - **Phase 2 — Database foundation (PR #1, pending review):** SQLAlchemy configuration, MySQL driver, Alembic migration, and initial Venue, Organizer, and Event models.
 - **Phase 3 — Event and catalog API (PR #2, pending review):** versioned endpoints for venues, organizer profiles, event creation, public discovery filters, and partial updates.
-- **Module 1 — Authentication (in progress):** attendee registration/login, refresh-token rotation, logout, account roles, admin role provisioning, and ownership checks for catalog mutations. See [docs/PHASE_4_AUTHENTICATION.md](docs/PHASE_4_AUTHENTICATION.md).
+- **Module 1 — Authentication (PR #4, CI passing):** attendee registration/login, refresh-token rotation, logout, account roles, admin role provisioning, and ownership checks for catalog mutations. See [docs/PHASE_4_AUTHENTICATION.md](docs/PHASE_4_AUTHENTICATION.md).
+- **Module 2 — Ticket categories and inventory (in review):** general-admission categories, prices, quantity bounds, sales windows, per-order limits, organizer ownership, and atomic inventory adjustment. See [docs/PHASE_5_TICKET_INVENTORY.md](docs/PHASE_5_TICKET_INVENTORY.md).
 
-Seat inventory, holds, bookings, payments, email verification, and password reset are not implemented yet. Authentication changes are in a separate review branch and have not been merged.
+Booking/hold records, payment, digital tickets, email verification, and password reset are not implemented yet. Module 1 and Module 2 are separate, unmerged review branches.
 
 ## Technology stack
 

@@ -12,7 +12,7 @@ def test_schema_creates_expected_tables_and_relationships():
     Base.metadata.create_all(engine)
     inspector = inspect(engine)
 
-    assert set(inspector.get_table_names()) == {"events", "organizers", "venues", "users", "refresh_tokens"}
+    assert set(inspector.get_table_names()) == {"events", "organizers", "venues", "users", "refresh_tokens", "ticket_categories"}
     assert {fk["referred_table"] for fk in inspector.get_foreign_keys("events")} == {
         "organizers", "venues"
     }
