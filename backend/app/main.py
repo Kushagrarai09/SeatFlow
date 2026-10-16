@@ -1,18 +1,25 @@
-"""Minimal SeatFlow API entry point for Phase 1."""
+"""SeatFlow FastAPI application and system health endpoints."""
 
 import os
-from fastapi import FastAPI
+
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+
 
 def allowed_origins() -> list[str]:
     """Read browser origins from FRONTEND_URL without requiring a .env file."""
     raw_origins = os.getenv("FRONTEND_URL", "http://localhost:3000")
     return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
+
 app = FastAPI(
     title="SeatFlow API",
     description="Backend API for the SeatFlow event discovery and seat-booking platform.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -23,22 +30,17 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
+
 @app.get("/", tags=["System"])
 def root() -> dict[str, str]:
     """Return API metadata useful during local development."""
     return {"name": "SeatFlow API", "version": app.version, "status": "running"}
 
+
 @app.get("/health", tags=["System"])
 def health() -> dict[str, str]:
     """Lightweight liveness check; this does not claim the database is healthy."""
     return {"status": "ok", "service": "seatflow-api"}
-
-
-from fastapi import Depends, HTTPException
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-
-from app.database import get_db
 
 
 @app.get("/health/database", tags=["System"])
