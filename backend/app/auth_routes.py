@@ -19,7 +19,7 @@ from app.auth import (
 )
 from app.database import get_db
 from app.models import RefreshToken, User
-from app.schemas_auth import AuthTokens, LoginRequest, RefreshRequest, RegisterRequest, UserRead
+from app.schemas_auth import AuthTokens, LoginRequest, ProfileUpdate, RefreshRequest, RegisterRequest, UserRead
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -131,4 +131,18 @@ def logout(
 @router.get("/me", response_model=UserRead)
 def get_me(current_user: User = Depends(get_current_user)) -> User:
     """Return the authenticated user's safe profile."""
+    return current_user
+
+
+
+@router.patch("/me", response_model=UserRead)
+def update_me(
+    payload: ProfileUpdate,
+    db: DbSession,
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Update safe profile fields. Email updates require a verification workflow and are not supported yet."""
+    current_user.full_name = payload.full_name.strip()
+    db.commit()
+    db.refresh(current_user)
     return current_user
