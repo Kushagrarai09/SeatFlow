@@ -3,7 +3,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ORMReadModel(BaseModel):
@@ -71,7 +71,6 @@ class EventRead(EventCreate, ORMReadModel):
     updated_at: datetime
 
 
-
 class TicketCategoryCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=100)
@@ -92,21 +91,20 @@ class TicketCategoryCreate(BaseModel):
             raise ValueError("Ticket category name cannot be blank")
         return value
 
-    @field_validator("sales_end_at")
-    @classmethod
-    def end_after_start(cls, value: datetime | None, info) -> datetime | None:
-        start = info.data.get("sales_start_at")
-        if value is not None and start is not None and value <= start:
-            raise ValueError("sales_end_at must be later than sales_start_at")
-        return value
-
-    @field_validator("max_per_order")
-    @classmethod
-    def max_not_below_min(cls, value: int, info) -> int:
-        minimum = info.data.get("min_per_order", 1)
-        if value < minimum:
+    @model_validator(mode="after")
+    def validate_rules(self):
+        if self.max_per_order < self.min_per_order:
             raise ValueError("max_per_order must be greater than or equal to min_per_order")
-        return value
+        if self.sales_start_at is not None and self.sales_end_at is not None:
+            start = self.sales_start_at
+            end = self.sales_end_at
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=__import__("datetime").timezone.utc)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=__import__("datetime").timezone.utc)
+            if end <= start:
+                raise ValueError("sales_end_at must be later than sales_start_at")
+        return self
 
 
 class TicketCategoryUpdate(BaseModel):
@@ -131,6 +129,22 @@ class TicketCategoryUpdate(BaseModel):
             raise ValueError("Ticket category name cannot be blank")
         return value
 
+    @model_validator(mode="after")
+    def validate_rules(self):
+        if self.min_per_order is not None and self.max_per_order is not None:
+            if self.max_per_order < self.min_per_order:
+                raise ValueError("max_per_order must be greater than or equal to min_per_order")
+        if self.sales_start_at is not None and self.sales_end_at is not None:
+            start = self.sales_start_at
+            end = self.sales_end_at
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=__import__("datetime").timezone.utc)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=__import__("datetime").timezone.utc)
+            if end <= start:
+                raise ValueError("sales_end_at must be later than sales_start_at")
+        return self
+
 
 class TicketCategoryRead(ORMReadModel):
     id: int
@@ -150,4 +164,3 @@ class TicketCategoryRead(ORMReadModel):
     sales_open: bool
     created_at: datetime
     updated_at: datetime
-
