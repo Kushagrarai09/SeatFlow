@@ -80,7 +80,7 @@ export default function HomePage() {
         const liveEvents = await eventsResponse.json();
         const venues = await venuesResponse.json();
         const venueById = new Map<number, { name: string; city: string }>(
-          venues.map((venue: { id: number; name: string; city: string }) => [venue.id, venue]),
+          venues.map((venue: { id: number; name: string; city: string }) => [venue.id, venue] as const),
         );
         setEvents(liveEvents.map((event: Omit<LiveEvent, "venueName" | "city">) => ({
           ...event,
