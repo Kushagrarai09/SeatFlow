@@ -44,12 +44,22 @@ def _read(reservation: Reservation) -> dict:
     }
 
 
-def _expire_due(db: Session, now: datetime, limit: int = 500) -> int:
-    """Release holds that have expired; conditional state changes prevent double release."""
+def _expire_due(
+    db: Session,
+    now: datetime,
+    limit: int = 500,
+    *,
+    only_reservation_id: int | None = None,
+) -> int:
+    """Release expired holds in bounded batches; optionally target one reservation."""
+    statement = select(Reservation).where(
+        Reservation.status == "pending",
+        Reservation.expires_at <= now,
+    )
+    if only_reservation_id is not None:
+        statement = statement.where(Reservation.id == only_reservation_id)
     due = list(db.scalars(
-        select(Reservation)
-        .where(Reservation.status == "pending", Reservation.expires_at <= now)
-        .order_by(Reservation.expires_at, Reservation.id)
+        statement.order_by(Reservation.expires_at, Reservation.id)
         .limit(limit)
         .with_for_update()
     ).all())
@@ -119,7 +129,7 @@ def create_reservation(
         if existing.request_fingerprint != fingerprint:
             raise HTTPException(status_code=409, detail="Idempotency-Key was already used with a different request")
         if existing.status == "pending" and existing.expires_at <= now:
-            _expire_due(db, now)
+            _expire_due(db, now, only_reservation_id=existing.id)
             db.commit()
             db.refresh(existing)
         return _read(existing)
@@ -202,7 +212,7 @@ def get_reservation(reservation_id: int, db: DbSession, current_user: CurrentUse
 def confirm_reservation(reservation_id: int, db: DbSession, current_user: CurrentUser):
     """Confirm a live hold and atomically move quantity from reserved to sold."""
     now = _now()
-    _expire_due(db, now)
+    _expire_due(db, now, only_reservation_id=reservation_id)
     reservation = db.scalar(select(Reservation).where(
         Reservation.id == reservation_id
     ).with_for_update())
@@ -242,7 +252,7 @@ def confirm_reservation(reservation_id: int, db: DbSession, current_user: Curren
 def cancel_reservation(reservation_id: int, db: DbSession, current_user: CurrentUser):
     """Cancel a pending hold or confirmed reservation; only pending holds release inventory."""
     now = _now()
-    _expire_due(db, now)
+    _expire_due(db, now, only_reservation_id=reservation_id)
     reservation = db.scalar(select(Reservation).where(
         Reservation.id == reservation_id
     ).with_for_update())
