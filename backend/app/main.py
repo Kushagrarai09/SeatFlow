@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.routes import router as api_router
 
 
 def allowed_origins() -> list[str]:
@@ -29,6 +30,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+
+app.include_router(api_router)
 
 
 @app.get("/", tags=["System"])
