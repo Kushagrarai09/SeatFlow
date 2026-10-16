@@ -69,6 +69,9 @@ def test_register_login_profile_refresh_and_logout():
         profile = client.get("/api/v1/auth/me", headers=headers)
         assert profile.status_code == 200
         assert profile.json()["email"] == "attendee@example.test"
+        updated_profile = client.patch("/api/v1/auth/me", json={"full_name": "Updated Attendee"}, headers=headers)
+        assert updated_profile.status_code == 200
+        assert updated_profile.json()["full_name"] == "Updated Attendee"
         assert client.get("/api/v1/auth/me").status_code == 401
 
         rotated = client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
