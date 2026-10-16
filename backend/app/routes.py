@@ -5,7 +5,9 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
@@ -21,6 +23,22 @@ from app.schemas import (
 
 router = APIRouter(prefix="/api/v1", tags=["Events and catalog"])
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+class EventUpdate(BaseModel):
+    """Partial event update schema. Omitted fields remain unchanged."""
+
+    model_config = ConfigDict(extra="forbid")
+    organizer_id: int | None = Field(default=None, gt=0)
+    venue_id: int | None = Field(default=None, gt=0)
+    title: str | None = Field(default=None, min_length=1, max_length=180)
+    description: str | None = None
+    category: str | None = Field(default=None, min_length=1, max_length=80)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    price: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    capacity: int | None = Field(default=None, gt=0)
+    status: str | None = Field(default=None, pattern="^(draft|published|cancelled|completed)$")
 
 
 def _get_venue(db: Session, venue_id: int) -> Venue:
@@ -78,14 +96,12 @@ def create_organizer(payload: OrganizerCreate, db: DbSession) -> Organizer:
     db.add(organizer)
     try:
         db.commit()
-    except Exception as exc:
+    except IntegrityError as exc:
         db.rollback()
-        # Do not leak SQL, database credentials, or driver internals in API errors.
-        from sqlalchemy.exc import IntegrityError
-
-        if isinstance(exc, IntegrityError):
-            raise HTTPException(status_code=409, detail="An organizer with this email already exists") from exc
-        raise
+        raise HTTPException(
+            status_code=409,
+            detail="An organizer with this email already exists",
+        ) from exc
     db.refresh(organizer)
     return organizer
 
@@ -122,6 +138,8 @@ def discover_events(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[Event]:
     """Discover only published events, with optional text, category, city, and date filters."""
+    if starts_after and starts_before and starts_after > starts_before:
+        raise HTTPException(status_code=422, detail="starts_after must be earlier than starts_before")
     statement = (
         select(Event)
         .join(Event.venue)
@@ -139,8 +157,6 @@ def discover_events(
         statement = statement.where(Event.starts_at >= starts_after)
     if starts_before:
         statement = statement.where(Event.starts_at <= starts_before)
-    if starts_after and starts_before and starts_after > starts_before:
-        raise HTTPException(status_code=422, detail="starts_after must be earlier than starts_before")
     return list(db.scalars(statement.offset(offset).limit(limit)).unique().all())
 
 
@@ -154,44 +170,35 @@ def get_public_event(event_id: int, db: DbSession) -> Event:
 
 
 @router.patch("/events/{event_id}", response_model=EventRead)
-def update_event(event_id: int, payload: "EventUpdate", db: DbSession) -> Event:
+def update_event(event_id: int, payload: EventUpdate, db: DbSession) -> Event:
     """Partially update an event. Add organizer ownership checks with authentication."""
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     changes = payload.model_dump(exclude_unset=True)
     if "organizer_id" in changes:
+        if changes["organizer_id"] is None:
+            raise HTTPException(status_code=422, detail="organizer_id cannot be null")
         _get_organizer(db, changes["organizer_id"])
     if "venue_id" in changes:
+        if changes["venue_id"] is None:
+            raise HTTPException(status_code=422, detail="venue_id cannot be null")
         _get_venue(db, changes["venue_id"])
+    required_fields = ("title", "category", "starts_at", "ends_at", "price", "capacity", "status")
+    if any(field in changes and changes[field] is None for field in required_fields):
+        raise HTTPException(status_code=422, detail="Required event fields cannot be null")
     proposed_start = changes.get("starts_at", event.starts_at)
     proposed_end = changes.get("ends_at", event.ends_at)
     try:
         invalid_range = proposed_end <= proposed_start
     except TypeError as exc:
-        raise HTTPException(status_code=422, detail="Event timestamps must use compatible timezone information") from exc
+        raise HTTPException(
+            status_code=422,
+            detail="Event timestamps must use compatible timezone information",
+        ) from exc
     if invalid_range:
         raise HTTPException(status_code=422, detail="ends_at must be later than starts_at")
     for field, value in changes.items():
         setattr(event, field, value)
     db.commit()
     return _get_event(db, event.id)
-
-
-class EventUpdate(EventCreate):
-    """Optional version of EventCreate used for PATCH updates."""
-
-    organizer_id: int | None = None
-    venue_id: int | None = None
-    title: str | None = None
-    description: str | None = None
-    category: str | None = None
-    starts_at: datetime | None = None
-    ends_at: datetime | None = None
-    price: Decimal | None = None
-    capacity: int | None = None
-    status: str | None = None
-
-    # The shared create validators assume both timestamps exist, so PATCH validates
-    # the combined start/end range in update_event instead.
-    model_config = {"extra": "forbid"}
