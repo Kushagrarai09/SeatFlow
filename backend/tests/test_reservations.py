@@ -200,3 +200,26 @@ def test_other_attendee_cannot_read_or_cancel_reservation():
         assert client.post(f"/api/v1/reservations/{reservation_id}/cancel", headers=other).status_code == 404
     finally:
         cleanup(client, engine)
+
+
+def test_expiry_sweep_persists_when_cancel_fails_for_expired_reservation():
+    client, engine, factory = make_client()
+    try:
+        host = register_user(client, factory, "host@example.com", "organizer")
+        attendee = register_user(client, factory, "attendee@example.com")
+        category_id = create_inventory(client, host, factory, quantity=2)
+        created = reserve(client, attendee, category_id, "expiry-cancel-key-1", 2)
+        reservation_id = created.json()["id"]
+        with factory() as db:
+            row = db.get(Reservation, reservation_id)
+            row.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1)
+            db.commit()
+        response = client.post(f"/api/v1/reservations/{reservation_id}/cancel", headers=attendee)
+        assert response.status_code == 409
+        with factory() as db:
+            category = db.get(TicketCategory, category_id)
+            row = db.get(Reservation, reservation_id)
+            assert category.reserved_quantity == 0
+            assert row.status == "expired"
+    finally:
+        cleanup(client, engine)
