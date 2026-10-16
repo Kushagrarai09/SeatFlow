@@ -149,3 +149,32 @@ class TicketCategory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     event: Mapped["Event"] = relationship(back_populates="ticket_categories")
+
+
+
+class Reservation(Base):
+    """A time-limited hold or confirmed booking for one ticket category."""
+    __tablename__ = "reservations"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_reservations_quantity_positive"),
+        CheckConstraint("status IN ('pending', 'confirmed', 'expired', 'cancelled')",
+                        name="ck_reservations_status_valid"),
+        UniqueConstraint("user_id", "idempotency_key", name="uq_reservations_user_idempotency"),
+        Index("ix_reservations_status_expiry", "status", "expires_at"),
+        Index("ix_reservations_user_created", "user_id", "created_at"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    ticket_category_id: Mapped[int] = mapped_column(ForeignKey("ticket_categories.id", ondelete="RESTRICT"), nullable=False)
+    quantity: Mapped[int] = mapped_column(nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", server_default="pending")
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    user: Mapped["User"] = relationship()
+    ticket_category: Mapped["TicketCategory"] = relationship()
