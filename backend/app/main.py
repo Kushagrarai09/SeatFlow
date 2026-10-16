@@ -32,3 +32,21 @@ def root() -> dict[str, str]:
 def health() -> dict[str, str]:
     """Lightweight liveness check; this does not claim the database is healthy."""
     return {"status": "ok", "service": "seatflow-api"}
+
+
+from fastapi import Depends, HTTPException
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+
+
+@app.get("/health/database", tags=["System"])
+def database_health(db: Session = Depends(get_db)) -> dict[str, str]:
+    """Check database connectivity separately from API process liveness."""
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as exc:
+        # Do not return driver details, credentials, or internal connection strings.
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    return {"status": "ok", "database": "connected"}
