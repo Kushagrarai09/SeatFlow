@@ -16,6 +16,7 @@ from app.routes import router as api_router
 from app.auth_routes import router as auth_router
 from app.admin_routes import router as admin_router
 from app.ticket_routes import router as ticket_router
+from app.reservation_routes import router as reservation_router
 
 
 def allowed_origins() -> list[str]:
@@ -42,6 +43,7 @@ app.include_router(api_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(ticket_router)
+app.include_router(reservation_router)
 
 
 @app.get("/", tags=["System"])
