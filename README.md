@@ -10,9 +10,10 @@ SeatFlow is a full-stack platform for discovering events, managing venues, and b
 - **Phase 2 — Database foundation (PR #1, pending review):** SQLAlchemy configuration, MySQL driver, Alembic migration, and initial Venue, Organizer, and Event models.
 - **Phase 3 — Event and catalog API (PR #2, pending review):** versioned endpoints for venues, organizer profiles, event creation, public discovery filters, and partial updates.
 - **Module 1 — Authentication (PR #4, CI passing):** attendee registration/login, refresh-token rotation, logout, account roles, admin role provisioning, and ownership checks for catalog mutations. See [docs/PHASE_4_AUTHENTICATION.md](docs/PHASE_4_AUTHENTICATION.md).
-- **Module 2 — Ticket categories and inventory (in review):** general-admission categories, prices, quantity bounds, sales windows, per-order limits, organizer ownership, and atomic inventory adjustment. See [docs/PHASE_5_TICKET_INVENTORY.md](docs/PHASE_5_TICKET_INVENTORY.md).
+- **Module 2 — Ticket categories and inventory (PR #5, pending review):** general-admission categories, prices, quantity bounds, sales windows, per-order limits, organizer ownership, and atomic inventory adjustment. See [docs/PHASE_5_TICKET_INVENTORY.md](docs/PHASE_5_TICKET_INVENTORY.md).
+- **Module 3 — Booking and reservation engine (PR #6, pending review):** temporary 10-minute holds, conditional inventory allocation, confirmation, cancellation, expiry sweep, per-user idempotency keys, and lifecycle tests. See [docs/MODULE_3_BOOKING_RESERVATIONS.md](docs/MODULE_3_BOOKING_RESERVATIONS.md).
 
-Booking/hold records, payment, digital tickets, email verification, and password reset are not implemented yet. Module 1 and Module 2 are separate, unmerged review branches.
+Payments/refunds, digital tickets, email verification, and password reset are not implemented yet. PRs remain unmerged and must be reviewed in dependency order.
 
 ## Technology stack
 
@@ -97,9 +98,9 @@ The frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://127.0.0.1:8000`). T
 - **Phase 2:** database integration and initial domain models (implementation on `feat/phase-2-database`)
 - **Phase 3:** event and catalog API (current branch: `feat/phase-3-event-api`)
 - **Module 1:** account authentication, roles, and organizer ownership authorization (this PR)
-- **Next:** ticket categories, inventory, temporary reservations, and concurrency-safe booking
+- **Module 3:** temporary reservations, expiry, cancellation, confirmation, and idempotency
 - **Later:** payment test mode, ticket validation, notifications, testing, observability, deployment, and production hardening
 
 **Security note:** this branch adds authentication and authorization to catalog mutations, but it is still under review. Do not treat the platform as production-ready until migrations and tests pass and deployment controls are configured.
 
-See [docs/PHASE_1.md](docs/PHASE_1.md), [docs/PHASE_2.md](docs/PHASE_2.md), [docs/PHASE_3.md](docs/PHASE_3.md), and [docs/PHASE_4_AUTHENTICATION.md](docs/PHASE_4_AUTHENTICATION.md) for setup and acceptance checklists.
+See [docs/PHASE_1.md](docs/PHASE_1.md), [docs/PHASE_2.md](docs/PHASE_2.md), [docs/PHASE_3.md](docs/PHASE_3.md), [docs/PHASE_4_AUTHENTICATION.md](docs/PHASE_4_AUTHENTICATION.md), and [docs/MODULE_3_BOOKING_RESERVATIONS.md](docs/MODULE_3_BOOKING_RESERVATIONS.md) for setup and acceptance checklists.
