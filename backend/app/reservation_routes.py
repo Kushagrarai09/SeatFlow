@@ -202,7 +202,7 @@ def create_reservation(
 
 @router.get("/reservations/{reservation_id}", response_model=ReservationRead)
 def get_reservation(reservation_id: int, db: DbSession, current_user: CurrentUser):
-    _expire_due(db, _now())
+    _expire_due(db, _now(), only_reservation_id=reservation_id)
     db.commit()
     reservation = _get_reservation(db, reservation_id, current_user)
     return _read(reservation)
