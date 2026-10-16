@@ -84,3 +84,60 @@ def test_register_login_profile_refresh_and_logout():
         app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
+
+
+def test_admin_can_promote_organizer_but_attendee_cannot_assign_roles():
+    client, engine = make_client()
+    testing_session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    try:
+        admin_user = client.post("/api/v1/auth/register", json={
+            "email": "admin@example.test", "full_name": "Admin User", "password": "correct-horse-123"
+        })
+        attendee = client.post("/api/v1/auth/register", json={
+            "email": "new-organizer@example.test", "full_name": "New Organizer", "password": "correct-horse-123"
+        })
+        assert admin_user.status_code == attendee.status_code == 201
+        with testing_session() as db:
+            from app.models import User
+            administrator = db.get(User, admin_user.json()["id"])
+            administrator.role = "admin"  # trusted bootstrap simulation in the test only
+            db.commit()
+
+        admin_tokens = client.post("/api/v1/auth/login", json={
+            "email": "admin@example.test", "password": "correct-horse-123"
+        }).json()
+        attendee_tokens = client.post("/api/v1/auth/login", json={
+            "email": "new-organizer@example.test", "password": "correct-horse-123"
+        }).json()
+        target_id = attendee.json()["id"]
+
+        denied = client.patch(
+            f"/api/v1/admin/users/{target_id}/role",
+            json={"role": "organizer"},
+            headers={"Authorization": "Bearer " + attendee_tokens["access_token"]},
+        )
+        assert denied.status_code == 403
+
+        promoted = client.patch(
+            f"/api/v1/admin/users/{target_id}/role",
+            json={"role": "organizer"},
+            headers={"Authorization": "Bearer " + admin_tokens["access_token"]},
+        )
+        assert promoted.status_code == 200
+        assert promoted.json()["role"] == "organizer"
+
+        deactivated = client.patch(
+            f"/api/v1/admin/users/{target_id}/active",
+            json={"is_active": False},
+            headers={"Authorization": "Bearer " + admin_tokens["access_token"]},
+        )
+        assert deactivated.status_code == 200
+        assert client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": "Bearer " + attendee_tokens["access_token"]},
+        ).status_code == 401
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
