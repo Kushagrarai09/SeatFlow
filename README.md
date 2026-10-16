@@ -7,9 +7,10 @@ SeatFlow is a full-stack platform for discovering events, managing venues, and b
 ## Current progress
 
 - **Phase 1 — Foundation:** starter UI, FastAPI service, environment examples, and health checks.
-- **Phase 2 — Database foundation (in progress):** SQLAlchemy configuration, MySQL driver, Alembic migration, and initial Venue, Organizer, and Event models. Review the Phase 2 guide before applying the migration.
+- **Phase 2 — Database foundation (PR #1, pending review):** SQLAlchemy configuration, MySQL driver, Alembic migration, and initial Venue, Organizer, and Event models.
+- **Phase 3 — Event and catalog API (in progress):** versioned endpoints for organizers, venues, event creation, public discovery filters, and partial event updates. See the Phase 3 guide.
 
-Authentication, public event CRUD, seat holds, booking, and payments are not implemented yet.
+Authentication/authorization, seat holds, booking, and payments are not implemented yet.
 
 ## Technology stack
 
@@ -92,10 +93,12 @@ The frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://127.0.0.1:8000`). T
 
 - **Phase 1:** project foundation, starter UI, API health check, setup documentation
 - **Phase 2:** database integration and initial domain models (implementation on `feat/phase-2-database`)
-- **Phase 3:** accounts, authentication, and roles
-- **Phase 4:** event discovery and organizer event management
+- **Phase 3:** event and catalog API (current branch: `feat/phase-3-event-api`)
+- **Phase 4:** accounts, authentication, roles, and organizer ownership authorization
 - **Phase 5:** seat maps, temporary seat holds, and concurrency-safe booking
 - **Phase 6:** checkout/payment test mode and booking confirmations
 - **Phase 7:** testing, observability, deployment, and production hardening
 
-See [docs/PHASE_1.md](docs/PHASE_1.md) and [docs/PHASE_2.md](docs/PHASE_2.md) for setup and acceptance checklists.
+**Security note:** Phase 3 management endpoints are not authenticated and are for local development only. Do not expose them publicly before Phase 4 authorization is complete.
+
+See [docs/PHASE_1.md](docs/PHASE_1.md), [docs/PHASE_2.md](docs/PHASE_2.md), and [docs/PHASE_3.md](docs/PHASE_3.md) for setup and acceptance checklists.
