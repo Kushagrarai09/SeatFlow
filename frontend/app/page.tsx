@@ -10,11 +10,30 @@ const API_URL = (
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
 
-const events = [
-  { id:"01", category:"MUSIC", title:"Afterglow Sessions", venue:"The Glasshouse · Mumbai", date:"SAT, NOV 14", price:"From ₹899", theme:"event-coral", icon:Music2, tag:"SELLING FAST", art:"FEEL\nEVERYTHING" },
-  { id:"02", category:"ART & CULTURE", title:"The Other Side of Art", venue:"Bandra Art District · Mumbai", date:"SUN, NOV 22", price:"From ₹499", theme:"event-lilac", icon:Palette, tag:"NEW EXPERIENCE", art:"LOOK\nCLOSER" },
-  { id:"03", category:"COMMUNITY", title:"Ideas After Hours", venue:"The Conservatory · Mumbai", date:"FRI, DEC 04", price:"From ₹699", theme:"event-lime", icon:Trophy, tag:"COMMUNITY PICK", art:"THINK\nTOGETHER" },
+type LiveEvent = {
+  id: number;
+  title: string;
+  category: string;
+  description?: string | null;
+  starts_at: string;
+  ends_at: string;
+  price: string | number;
+  venue_id: number;
+  venueName: string;
+  city: string;
+};
+
+const eventArtwork = [
+  { theme: "event-coral", icon: Music2, tag: "LIVE EXPERIENCE", art: "FEEL\\nEVERYTHING" },
+  { theme: "event-lilac", icon: Palette, tag: "FIND SOMETHING NEW", art: "LOOK\\nCLOSER" },
+  { theme: "event-lime", icon: Trophy, tag: "MADE FOR YOU", art: "THINK\\nTOGETHER" },
 ];
+
+function formatEventDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "DATE TO BE ANNOUNCED";
+  return new Intl.DateTimeFormat("en-IN", { weekday: "short", month: "short", day: "numeric" }).format(date).toUpperCase();
+}
 
 const categories = [
   { label:"Live music", icon:Music2, description:"For the main-character moments" },
@@ -28,6 +47,9 @@ type ApiStatus = "checking" | "online" | "offline";
 export default function HomePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
+  const [events, setEvents] = useState<LiveEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -44,6 +66,35 @@ export default function HomePage() {
       window.clearTimeout(timeoutId);
       controller.abort();
     };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setEventsLoading(true);
+    Promise.all([
+      fetch(`${API_URL}/api/v1/events?limit=12`, { signal: controller.signal }),
+      fetch(`${API_URL}/api/v1/venues?limit=100`, { signal: controller.signal }),
+    ])
+      .then(async ([eventsResponse, venuesResponse]) => {
+        if (!eventsResponse.ok || !venuesResponse.ok) throw new Error("Could not load live events.");
+        const liveEvents = await eventsResponse.json();
+        const venues = await venuesResponse.json();
+        const venueById = new Map<number, { name: string; city: string }>(
+          venues.map((venue: { id: number; name: string; city: string }) => [venue.id, venue]),
+        );
+        setEvents(liveEvents.map((event: Omit<LiveEvent, "venueName" | "city">) => ({
+          ...event,
+          venueName: venueById.get(event.venue_id)?.name ?? "Venue to be announced",
+          city: venueById.get(event.venue_id)?.city ?? "",
+        })));
+        setEventsError("");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setEventsError(error instanceof Error ? error.message : "Could not load live events.");
+      })
+      .finally(() => setEventsLoading(false));
+    return () => controller.abort();
   }, []);
 
   return (
@@ -77,15 +128,21 @@ export default function HomePage() {
       </section>
       <section className="discover-section" id="discover">
         <div className="section-heading-row"><div><div className="eyebrow"><span className="eyebrow-star">↘</span> THE GOOD STUFF</div><h2>Plans worth<br className="mobile-break" /> <span>leaving home for.</span></h2></div><a href="#categories" className="text-link">Browse experiences <ArrowRight size={16} /></a></div>
+        {eventsLoading && <p className="demo-note" role="status">Loading live events from SeatFlow…</p>}
+        {!eventsLoading && eventsError && <p className="demo-note" role="alert">{eventsError} Make sure the backend and database are running.</p>}
+        {!eventsLoading && !eventsError && events.length === 0 && <p className="demo-note">No published events are available yet. An organizer can publish an event through the API, and it will appear here.</p>}
         <div className="events-grid">
-          {events.map((event) => { const EventIcon = event.icon; return (
-            <article className={`event-card ${event.theme}`} key={event.id}>
-              <div className="event-artwork"><div className="event-art-top"><span>{event.category}</span><span className="event-number">/ {event.id}</span></div><span className="event-tag">{event.tag}</span><div className="event-symbol"><EventIcon size={72} strokeWidth={1.2} /></div><div className="event-artword">{event.art}</div><span className="event-art-corner">SF✳</span></div>
-              <div className="event-info"><div className="event-date"><CalendarDays size={13} /> {event.date}</div><h3>{event.title}</h3><p className="event-venue"><MapPin size={14} /> {event.venue}</p><div className="event-card-footer"><span>{event.price}</span><a href="#phase-status" aria-label={`Learn about ${event.title}`}><ArrowRight size={17} /></a></div></div>
-            </article>
-          ); })}
+          {events.map((event, index) => {
+            const artwork = eventArtwork[index % eventArtwork.length];
+            const EventIcon = artwork.icon;
+            return (
+              <article className={`event-card ${artwork.theme}`} key={event.id}>
+                <div className="event-artwork"><div className="event-art-top"><span>{event.category.toUpperCase()}</span><span className="event-number">/ {String(event.id).padStart(2, "0")}</span></div><span className="event-tag">{artwork.tag}</span><div className="event-symbol"><EventIcon size={72} strokeWidth={1.2} /></div><div className="event-artword">{artwork.art}</div><span className="event-art-corner">SF✳</span></div>
+                <div className="event-info"><div className="event-date"><CalendarDays size={13} /> {formatEventDate(event.starts_at)}</div><h3>{event.title}</h3><p className="event-venue"><MapPin size={14} /> {event.venueName}{event.city ? ` · ${event.city}` : ""}</p><div className="event-card-footer"><span>From ₹{Number(event.price).toLocaleString("en-IN")}</span><a href={`/events/${event.id}`} aria-label={`View tickets for ${event.title}`}><ArrowRight size={17} /></a></div></div>
+              </article>
+            );
+          })}
         </div>
-        <p className="demo-note">Illustrative preview events for the Phase 1 interface — live listings and booking are not connected yet.</p>
       </section>
       <section className="category-section" id="categories">
         <div className="category-intro"><div className="eyebrow"><span className="eyebrow-star">✳</span> YOUR KIND OF OUT</div><h2>What are you<br />in the mood <span>for?</span></h2><p>There’s no wrong answer. Except staying in because you couldn’t decide.</p></div>
@@ -97,7 +154,7 @@ export default function HomePage() {
         <div className="about-values"><div><span>01 / DISCOVER</span><strong>Find your next yes.</strong><small>Explore events by interest and place.</small></div><div><span>02 / BOOK</span><strong>Your seat, sorted.</strong><small>Reliable booking is on the roadmap.</small></div><div><span>03 / SHOW UP</span><strong>Be where it happens.</strong><small>Keep the good part of making plans.</small></div></div>
       </section>
       <section className="organizer-section" id="organizers"><div><div className="eyebrow"><span className="eyebrow-star">↗</span> FOR THE PEOPLE WHO MAKE IT HAPPEN</div><h2>Got a good thing<br />going <span>on?</span></h2><p>We’re building tools to help event hosts bring the right people together.</p></div><a className="button-primary" href="mailto:hello@seatflow.example?subject=SeatFlow%20organizer%20interest">I’m an organizer <ArrowRight size={16} /></a></section>
-      <footer className="site-footer"><a className="brand footer-brand" href="#home"><span className="brand-mark"><Ticket size={18} strokeWidth={2.6} /></span><span>seatflow<span className="brand-period">.</span></span></a><p>Find the thing. Feel the thing. Remember the thing.</p><div className="footer-status" id="phase-status"><span className={`status-light status-${apiStatus}`} /> API {apiStatus === "checking" ? "CHECKING" : apiStatus === "online" ? "CONNECTED" : "NOT CONNECTED"} <span className="footer-phase">· PHASE 1 PREVIEW</span></div><a className="back-top" href="#home">BACK TO TOP ↑</a></footer>
+      <footer className="site-footer"><a className="brand footer-brand" href="#home"><span className="brand-mark"><Ticket size={18} strokeWidth={2.6} /></span><span>seatflow<span className="brand-period">.</span></span></a><p>Find the thing. Feel the thing. Remember the thing.</p><div className="footer-status" id="phase-status"><span className={`status-light status-${apiStatus}`} /> API {apiStatus === "checking" ? "CHECKING" : apiStatus === "online" ? "CONNECTED" : "NOT CONNECTED"} <span className="footer-phase">· LIVE EVENT FEED</span></div><a className="back-top" href="#home">BACK TO TOP ↑</a></footer>
     </main>
   );
 }
