@@ -1,15 +1,15 @@
 """Authentication primitives and dependencies for SeatFlow."""
 
 from datetime import datetime, timedelta, timezone
-import base64
 import hashlib
 import hmac
-import json
 import os
 import secrets
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt import InvalidTokenError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -22,11 +22,11 @@ _REFRESH_TOKEN_DAYS = 14
 _PBKDF2_ITERATIONS = 310_000
 
 
-def _secret_key() -> bytes:
+def _secret_key() -> str:
     value = os.getenv("JWT_SECRET_KEY", "").strip()
     if len(value) < 32:
         raise RuntimeError("JWT_SECRET_KEY must contain at least 32 characters")
-    return value.encode("utf-8")
+    return value
 
 
 def hash_password(password: str) -> str:
@@ -39,6 +39,7 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, encoded: str) -> bool:
+    """Verify a stored salted password hash without leaking comparison timing."""
     try:
         algorithm, iterations_text, salt_hex, digest_hex = encoded.split("$", 3)
         iterations = int(iterations_text)
@@ -50,41 +51,26 @@ def verify_password(password: str, encoded: str) -> bool:
         return False
 
 
-def _b64(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-def _unb64(value: str) -> bytes:
-    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-
-
 def _sign_token(payload: dict[str, object]) -> str:
-    header = {"alg": ALGORITHM, "typ": "JWT"}
-    first = _b64(json.dumps(header, separators=(",", ":"), sort_keys=True).encode())
-    second = _b64(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
-    signing_input = (first + "." + second).encode("ascii")
-    signature = hmac.new(_secret_key(), signing_input, hashlib.sha256).digest()
-    return first + "." + second + "." + _b64(signature)
+    """Sign a JWT with the configured application secret."""
+    return jwt.encode(payload, _secret_key(), algorithm=ALGORITHM)
 
 
 def _decode_token(token: str, expected_type: str) -> dict[str, object]:
+    """Verify signature, standard claims, expiry, and application-specific token type."""
     try:
-        first, second, supplied = token.split(".")
-        signing_input = (first + "." + second).encode("ascii")
-        expected = hmac.new(_secret_key(), signing_input, hashlib.sha256).digest()
-        if not hmac.compare_digest(expected, _unb64(supplied)):
-            raise ValueError("invalid signature")
-        header = json.loads(_unb64(first))
-        payload = json.loads(_unb64(second))
-        now = int(datetime.now(timezone.utc).timestamp())
-        if header.get("alg") != ALGORITHM or payload.get("typ") != expected_type:
-            raise ValueError("wrong token type")
-        if not isinstance(payload.get("sub"), str) or int(payload.get("exp", 0)) <= now:
-            raise ValueError("expired token")
-        if not isinstance(payload.get("jti"), str):
-            raise ValueError("missing token id")
+        payload = jwt.decode(
+            token,
+            _secret_key(),
+            algorithms=[ALGORITHM],
+            options={"require": ["exp", "iat", "sub", "jti", "typ"]},
+        )
+        if not isinstance(payload, dict) or payload.get("typ") != expected_type:
+            raise InvalidTokenError("wrong token type")
+        if not isinstance(payload.get("sub"), str) or not isinstance(payload.get("jti"), str):
+            raise InvalidTokenError("invalid token subject or identifier")
         return payload
-    except Exception as exc:
+    except (InvalidTokenError, TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -95,9 +81,11 @@ def _decode_token(token: str, expected_type: str) -> dict[str, object]:
 def create_access_token(user: User) -> str:
     now = datetime.now(timezone.utc)
     return _sign_token({
-        "sub": str(user.id), "role": user.role, "typ": "access",
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=_ACCESS_TOKEN_MINUTES)).timestamp()),
+        "sub": str(user.id),
+        "role": user.role,
+        "typ": "access",
+        "iat": now,
+        "exp": now + timedelta(minutes=_ACCESS_TOKEN_MINUTES),
         "jti": secrets.token_urlsafe(16),
     })
 
@@ -107,8 +95,11 @@ def create_refresh_token(user: User) -> tuple[str, str, datetime]:
     token_id = secrets.token_urlsafe(24)
     expires_at = now + timedelta(days=_REFRESH_TOKEN_DAYS)
     token = _sign_token({
-        "sub": str(user.id), "typ": "refresh", "iat": int(now.timestamp()),
-        "exp": int(expires_at.timestamp()), "jti": token_id,
+        "sub": str(user.id),
+        "typ": "refresh",
+        "iat": now,
+        "exp": expires_at,
+        "jti": token_id,
     })
     return token, token_id, expires_at
 
