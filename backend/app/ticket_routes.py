@@ -3,11 +3,11 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from app.auth import get_current_user, require_roles
+from app.auth import get_current_user, get_optional_current_user, require_roles
 from app.database import get_db
 from app.models import Event, TicketCategory, User
 from app.schemas import TicketCategoryCreate, TicketCategoryRead, TicketCategoryUpdate
@@ -84,8 +84,10 @@ def create_ticket_category(event_id: int, payload: TicketCategoryCreate, db: DbS
     _assert_event_owner(event, current_user)
     if event.status in ("cancelled", "completed"):
         raise HTTPException(status_code=409, detail="Cannot add ticket categories to a cancelled or completed event")
-    if payload.total_quantity > event.capacity:
-        raise HTTPException(status_code=422, detail="Ticket category quantity cannot exceed the event capacity")
+    db.scalar(select(Event.id).where(Event.id == event_id).with_for_update())
+    allocated = db.scalar(select(func.coalesce(func.sum(TicketCategory.total_quantity), 0)).where(TicketCategory.event_id == event_id)) or 0
+    if allocated + payload.total_quantity > event.capacity:
+        raise HTTPException(status_code=422, detail="Combined ticket category quantities cannot exceed the event capacity")
     category = TicketCategory(
         event_id=event.id, name=payload.name, description=payload.description, price=payload.price,
         total_quantity=payload.total_quantity, min_per_order=payload.min_per_order,
@@ -105,7 +107,7 @@ def create_ticket_category(event_id: int, payload: TicketCategoryCreate, db: DbS
 @router.get("/events/{event_id}/ticket-categories", response_model=list[TicketCategoryRead])
 def list_ticket_categories(
     event_id: int, db: DbSession, include_inactive: bool = Query(default=False),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     event = _get_event(db, event_id)
     is_manager = current_user is not None and (current_user.role == "admin" or event.organizer.user_id == current_user.id)
@@ -146,8 +148,13 @@ def update_ticket_category(
     for field in ("name", "price", "total_quantity", "min_per_order", "max_per_order", "status"):
         if field in changes and changes[field] is None:
             raise HTTPException(status_code=422, detail=f"{field} cannot be null")
-    if "total_quantity" in changes and changes["total_quantity"] > event.capacity:
-        raise HTTPException(status_code=422, detail="Ticket category quantity cannot exceed event capacity")
+    if "total_quantity" in changes:
+        db.scalar(select(Event.id).where(Event.id == event_id).with_for_update())
+        other_total = db.scalar(select(func.coalesce(func.sum(TicketCategory.total_quantity), 0)).where(
+            TicketCategory.event_id == event_id, TicketCategory.id != category_id
+        )) or 0
+        if other_total + changes["total_quantity"] > event.capacity:
+            raise HTTPException(status_code=422, detail="Combined ticket category quantities cannot exceed event capacity")
     _validate_inventory_change(category, changes)
     for field, value in changes.items():
         setattr(category, field, value)
@@ -184,10 +191,10 @@ def adjust_inventory(
     _assert_event_owner(event, current_user)
     if event.status in ("cancelled", "completed"):
         raise HTTPException(status_code=409, detail="Cannot adjust inventory for a cancelled or completed event")
-    other_total = db.scalar(select(TicketCategory.total_quantity).where(
+    db.scalar(select(Event.id).where(Event.id == event.id).with_for_update())
+    other_total = db.scalar(select(func.coalesce(func.sum(TicketCategory.total_quantity), 0)).where(
         TicketCategory.event_id == event.id, TicketCategory.id != category_id
-    ))
-    other_total = other_total or 0
+    )) or 0
     proposed = TicketCategory.total_quantity + quantity_delta
     result = db.execute(
         update(TicketCategory).where(
