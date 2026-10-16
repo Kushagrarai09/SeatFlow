@@ -138,9 +138,9 @@ class TicketCategoryUpdate(BaseModel):
             start = self.sales_start_at
             end = self.sales_end_at
             if start.tzinfo is None:
-                start = start.replace(tzinfo=__import__("datetime").timezone.utc)
+                start = start.replace(tzinfo=timezone.utc)
             if end.tzinfo is None:
-                end = end.replace(tzinfo=__import__("datetime").timezone.utc)
+                end = end.replace(tzinfo=timezone.utc)
             if end <= start:
                 raise ValueError("sales_end_at must be later than sales_start_at")
         return self
