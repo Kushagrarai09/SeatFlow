@@ -89,7 +89,7 @@ def test_unauthenticated_and_attendee_cannot_mutate_catalog():
         assert client.post("/api/v1/venues", json={
             "name": "Hall", "address": "Road", "city": "Mumbai", "capacity": 100
         }).status_code == 401
-        attendee = register(client, "attendee@example.test")
+        attendee = register(client, "attendee@example.com")
         denied = client.post("/api/v1/venues", headers=attendee, json={
             "name": "Hall", "address": "Road", "city": "Mumbai", "capacity": 100
         })
@@ -104,8 +104,8 @@ def test_unauthenticated_and_attendee_cannot_mutate_catalog():
 def test_create_event_and_keep_drafts_out_of_public_discovery():
     client, engine = client_with_database()
     try:
-        headers = register(client, "host@example.test", "organizer")
-        organizer_id, venue_id = create_event_resources(client, headers, "host@example.test")
+        headers = register(client, "host@example.com", "organizer")
+        organizer_id, venue_id = create_event_resources(client, headers, "host@example.com")
         response = client.post("/api/v1/events", headers=headers, json=event_payload(organizer_id, venue_id))
         assert response.status_code == 201, response.text
         event_id = response.json()["id"]
@@ -121,8 +121,8 @@ def test_create_event_and_keep_drafts_out_of_public_discovery():
 def test_publish_event_and_filter_discovery_by_city_and_category():
     client, engine = client_with_database()
     try:
-        headers = register(client, "host@example.test", "organizer")
-        organizer_id, venue_id = create_event_resources(client, headers, "host@example.test")
+        headers = register(client, "host@example.com", "organizer")
+        organizer_id, venue_id = create_event_resources(client, headers, "host@example.com")
         created = client.post("/api/v1/events", headers=headers, json=event_payload(
             organizer_id, venue_id, status="published"
         ))
@@ -141,15 +141,15 @@ def test_publish_event_and_filter_discovery_by_city_and_category():
 def test_organizer_cannot_modify_another_organizers_event():
     client, engine = client_with_database()
     try:
-        host_a = register(client, "host-a@example.test", "organizer")
-        organizer_id, venue_id = create_event_resources(client, host_a, "host-a@example.test")
+        host_a = register(client, "host-a@example.com", "organizer")
+        organizer_id, venue_id = create_event_resources(client, host_a, "host-a@example.com")
         created = client.post("/api/v1/events", headers=host_a, json=event_payload(
             organizer_id, venue_id, status="published"
         ))
         assert created.status_code == 201, created.text
         event_id = created.json()["id"]
 
-        host_b = register(client, "host-b@example.test", "organizer")
+        host_b = register(client, "host-b@example.com", "organizer")
         response = client.patch(f"/api/v1/events/{event_id}", headers=host_b, json={"title": "Hijacked"})
         assert response.status_code == 403
         assert client.get(f"/api/v1/events/{event_id}").json()["title"] == "Backend Builders Meetup"
@@ -163,10 +163,10 @@ def test_organizer_cannot_modify_another_organizers_event():
 def test_invalid_event_dates_and_unknown_resources():
     client, engine = client_with_database()
     try:
-        headers = register(client, "host@example.test", "organizer")
+        headers = register(client, "host@example.com", "organizer")
         missing = client.post("/api/v1/events", headers=headers, json=event_payload(999, 999))
         assert missing.status_code == 404
-        organizer_id, venue_id = create_event_resources(client, headers, "host@example.test")
+        organizer_id, venue_id = create_event_resources(client, headers, "host@example.com")
         created = client.post("/api/v1/events", headers=headers, json=event_payload(
             organizer_id, venue_id, status="published"
         ))
