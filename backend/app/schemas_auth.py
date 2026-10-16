@@ -42,3 +42,16 @@ class UserRead(BaseModel):
     full_name: str
     role: str
     is_active: bool
+
+
+class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    full_name: str = Field(min_length=2, max_length=120)
+
+    @field_validator("full_name")
+    @classmethod
+    def trim_full_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("full_name must contain at least 2 non-space characters")
+        return value
