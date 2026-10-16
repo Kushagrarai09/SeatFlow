@@ -35,7 +35,7 @@ def hash_password(password: str) -> str:
         raise ValueError("Password must contain between 8 and 128 characters")
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _PBKDF2_ITERATIONS)
-    return f"pbkdf2_sha256\${_PBKDF2_ITERATIONS}\${salt.hex()}\${digest.hex()}"
+    return "pbkdf2_sha256$" + str(_PBKDF2_ITERATIONS) + "$" + salt.hex() + "$" + digest.hex()
 
 
 def verify_password(password: str, encoded: str) -> bool:
@@ -62,15 +62,15 @@ def _sign_token(payload: dict[str, object]) -> str:
     header = {"alg": ALGORITHM, "typ": "JWT"}
     first = _b64(json.dumps(header, separators=(",", ":"), sort_keys=True).encode())
     second = _b64(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
-    signing_input = f"{first}.{second}".encode("ascii")
+    signing_input = (first + "." + second).encode("ascii")
     signature = hmac.new(_secret_key(), signing_input, hashlib.sha256).digest()
-    return f"{first}.{second}.{_b64(signature)}"
+    return first + "." + second + "." + _b64(signature)
 
 
 def _decode_token(token: str, expected_type: str) -> dict[str, object]:
     try:
         first, second, supplied = token.split(".")
-        signing_input = f"{first}.{second}".encode("ascii")
+        signing_input = (first + "." + second).encode("ascii")
         expected = hmac.new(_secret_key(), signing_input, hashlib.sha256).digest()
         if not hmac.compare_digest(expected, _unb64(supplied)):
             raise ValueError("invalid signature")
