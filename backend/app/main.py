@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.routes import router as api_router
 from app.auth_routes import router as auth_router
+from app.admin_routes import router as admin_router
 
 
 def allowed_origins() -> list[str]:
@@ -34,6 +35,7 @@ app.add_middleware(
 
 app.include_router(api_router)
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 
 @app.get("/", tags=["System"])
