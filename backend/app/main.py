@@ -2,6 +2,10 @@
 
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -9,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.routes import router as api_router
+from app.auth_routes import router as auth_router
+from app.admin_routes import router as admin_router
 
 
 def allowed_origins() -> list[str]:
@@ -20,7 +26,7 @@ def allowed_origins() -> list[str]:
 app = FastAPI(
     title="SeatFlow API",
     description="Backend API for the SeatFlow event discovery and seat-booking platform.",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -31,8 +37,9 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-
 app.include_router(api_router)
+app.include_router(auth_router)
+app.include_router(admin_router)
 
 
 @app.get("/", tags=["System"])
@@ -53,6 +60,5 @@ def database_health(db: Session = Depends(get_db)) -> dict[str, str]:
     try:
         db.execute(text("SELECT 1"))
     except Exception as exc:
-        # Do not return driver details, credentials, or internal connection strings.
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
     return {"status": "ok", "database": "connected"}

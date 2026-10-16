@@ -8,9 +8,10 @@ SeatFlow is a full-stack platform for discovering events, managing venues, and b
 
 - **Phase 1 — Foundation:** starter UI, FastAPI service, environment examples, and health checks.
 - **Phase 2 — Database foundation (PR #1, pending review):** SQLAlchemy configuration, MySQL driver, Alembic migration, and initial Venue, Organizer, and Event models.
-- **Phase 3 — Event and catalog API (in progress):** versioned endpoints for organizers, venues, event creation, public discovery filters, and partial event updates. See the Phase 3 guide.
+- **Phase 3 — Event and catalog API (PR #2, pending review):** versioned endpoints for venues, organizer profiles, event creation, public discovery filters, and partial updates.
+- **Module 1 — Authentication (in progress):** attendee registration/login, refresh-token rotation, logout, account roles, admin role provisioning, and ownership checks for catalog mutations. See [docs/PHASE_4_AUTHENTICATION.md](docs/PHASE_4_AUTHENTICATION.md).
 
-Authentication/authorization, seat holds, booking, and payments are not implemented yet.
+Seat inventory, holds, bookings, payments, email verification, and password reset are not implemented yet. Authentication changes are in a separate review branch and have not been merged.
 
 ## Technology stack
 
@@ -94,11 +95,10 @@ The frontend uses `NEXT_PUBLIC_API_URL` (defaults to `http://127.0.0.1:8000`). T
 - **Phase 1:** project foundation, starter UI, API health check, setup documentation
 - **Phase 2:** database integration and initial domain models (implementation on `feat/phase-2-database`)
 - **Phase 3:** event and catalog API (current branch: `feat/phase-3-event-api`)
-- **Phase 4:** accounts, authentication, roles, and organizer ownership authorization
-- **Phase 5:** seat maps, temporary seat holds, and concurrency-safe booking
-- **Phase 6:** checkout/payment test mode and booking confirmations
-- **Phase 7:** testing, observability, deployment, and production hardening
+- **Module 1:** account authentication, roles, and organizer ownership authorization (this PR)
+- **Next:** ticket categories, inventory, temporary reservations, and concurrency-safe booking
+- **Later:** payment test mode, ticket validation, notifications, testing, observability, deployment, and production hardening
 
-**Security note:** Phase 3 management endpoints are not authenticated and are for local development only. Do not expose them publicly before Phase 4 authorization is complete.
+**Security note:** this branch adds authentication and authorization to catalog mutations, but it is still under review. Do not treat the platform as production-ready until migrations and tests pass and deployment controls are configured.
 
-See [docs/PHASE_1.md](docs/PHASE_1.md), [docs/PHASE_2.md](docs/PHASE_2.md), and [docs/PHASE_3.md](docs/PHASE_3.md) for setup and acceptance checklists.
+See [docs/PHASE_1.md](docs/PHASE_1.md), [docs/PHASE_2.md](docs/PHASE_2.md), [docs/PHASE_3.md](docs/PHASE_3.md), and [docs/PHASE_4_AUTHENTICATION.md](docs/PHASE_4_AUTHENTICATION.md) for setup and acceptance checklists.
