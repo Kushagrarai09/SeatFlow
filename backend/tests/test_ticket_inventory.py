@@ -186,3 +186,40 @@ def test_category_with_sold_inventory_cannot_be_deleted():
                              headers=host).status_code == 409
     finally:
         cleanup(client, engine)
+
+
+
+def test_combined_ticket_categories_cannot_exceed_event_capacity():
+    client, engine, factory = make_client()
+    try:
+        host = register_as(client, factory, "host@example.com", "organizer")
+        event_id = create_event(client, host, capacity=100)
+        first = client.post(
+            f"/api/v1/events/{event_id}/ticket-categories",
+            headers=host,
+            json=ticket_payload(name="General", total_quantity=70),
+        )
+        assert first.status_code == 201, first.text
+        second = client.post(
+            f"/api/v1/events/{event_id}/ticket-categories",
+            headers=host,
+            json=ticket_payload(name="VIP", total_quantity=31),
+        )
+        assert second.status_code == 422
+
+        second_ok = client.post(
+            f"/api/v1/events/{event_id}/ticket-categories",
+            headers=host,
+            json=ticket_payload(name="VIP", total_quantity=30),
+        )
+        assert second_ok.status_code == 201, second_ok.text
+
+        # Increasing the second category alone would make aggregate capacity 101.
+        increase = client.post(
+            f"/api/v1/ticket-categories/{second_ok.json()['id']}/inventory/adjust",
+            params={"quantity_delta": 1},
+            headers=host,
+        )
+        assert increase.status_code == 409
+    finally:
+        cleanup(client, engine)
