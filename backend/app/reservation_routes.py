@@ -242,10 +242,12 @@ def confirm_reservation(reservation_id: int, db: DbSession, current_user: Curren
 def cancel_reservation(reservation_id: int, db: DbSession, current_user: CurrentUser):
     """Cancel a pending hold or confirmed reservation; only pending holds release inventory."""
     now = _now()
+    _expire_due(db, now)
     reservation = db.scalar(select(Reservation).where(
         Reservation.id == reservation_id
     ).with_for_update())
     if reservation is None or (current_user.role != "admin" and reservation.user_id != current_user.id):
+        db.commit()
         raise HTTPException(status_code=404, detail="Reservation not found")
     if reservation.status == "cancelled":
         return _read(reservation)
