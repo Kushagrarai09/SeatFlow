@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -81,12 +81,25 @@ def refresh_tokens(payload: RefreshRequest, db: DbSession) -> AuthTokens:
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
     token_id = str(decoded["jti"])
-    record = db.scalar(select(RefreshToken).where(RefreshToken.token_digest == _token_digest(token_id)))
     user = db.get(User, user_id)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    if record is None or record.revoked_at is not None or record.expires_at <= now or user is None or not user.is_active:
+    if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
-    record.revoked_at = now
+
+    # Conditional UPDATE makes single-use token consumption atomic under concurrent refresh requests.
+    consumed = db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.token_digest == _token_digest(token_id),
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
+        .values(revoked_at=now)
+    )
+    if consumed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
     replacement, replacement_id, expires_at = create_refresh_token(user)
     db.add(RefreshToken(
         user_id=user.id,
