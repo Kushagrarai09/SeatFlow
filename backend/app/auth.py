@@ -128,3 +128,22 @@ def require_roles(*roles: str):
             raise HTTPException(403, "Insufficient permissions")
         return user
     return dependency
+
+
+
+def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Return None for anonymous requests, but validate any supplied bearer token."""
+    if credentials is None:
+        return None
+    payload = _decode_token(credentials.credentials, "access")
+    try:
+        user_id = int(payload["sub"])
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return user
